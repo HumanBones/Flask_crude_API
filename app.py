@@ -40,6 +40,35 @@ products_schema = ProductSchema(many=True)
 
 @app.route('/product', methods=['POST'])
 def add_product():
+
+    valid_values = ['name','description','price', 'qty']
+    errors = []
+
+
+    for key in valid_values:
+        if not request.json.get(key):
+            errors.append(f"Key {key} is required!")
+    
+    if not isinstance(request.json.get('price'), (float)):
+        errors.append("Price must be a float!")
+
+    if not isinstance(request.json.get('name'),(str)):
+        errors.append('Name must be a string!')
+    
+    if not isinstance(request.json.get('qty'), (int)):
+        errors.append("Qty must be an integer")
+    
+    qty = request.json.get('qty')
+    if qty is not None and qty < 0:
+        errors.append("qty must be a positiv number or 0")
+
+
+    if errors:
+        response = jsonify({"errors": errors})
+        response.status_code = 400 
+
+        return response
+
     name = request.json['name']
     description = request.json['description']
     price = request.json['price']
@@ -50,7 +79,7 @@ def add_product():
     db.session.add(new_product)
     db.session.commit()
 
-    return product_schema.jsonify(new_product)
+    return product_schema.jsonify(new_product),201
 
 
 @app.route('/product', methods=['GET'])
@@ -62,7 +91,7 @@ def get_products():
 
 
 @app.route('/product/<id>', methods=['GET'])
-def get_prduct(id):
+def get_product(id):
     product = Product.query.get(id)
     return product_schema.jsonify(product)
 
@@ -87,7 +116,7 @@ def update_product(id):
 
 
 @app.route('/product/<id>', methods=['DELETE'])
-def delete_prduct(id):
+def delete_product(id):
     product = Product.query.get(id)
     
     db.session.delete(product)
