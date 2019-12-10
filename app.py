@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy 
-from flask_marshmallow import Marshmallow 
+from flask_marshmallow import Marshmallow
+from sqlalchemy.exc import IntegrityError
 import os
 
 app = Flask(__name__)
@@ -52,6 +53,9 @@ def add_product():
     if not isinstance(request.json.get('price'), (float)):
         errors.append("Price must be a float!")
 
+    if not isinstance(request.json.get('description'), (str)):
+        errors.append("Description must be a string!")
+
     if not isinstance(request.json.get('name'),(str)):
         errors.append('Name must be a string!')
     
@@ -74,12 +78,22 @@ def add_product():
     price = request.json['price']
     qty = request.json['qty']
 
+
     new_product = Product(name, description, price, qty)
 
-    db.session.add(new_product)
-    db.session.commit()
+    try:
+        db.session.add(new_product)
+        db.session.commit()
+        return product_schema.jsonify(new_product), 201
+    
+    except IntegrityError:
+        db.session.rollback()
+        response = jsonify("Product already exists!")
+        response.status_code = 400
 
-    return product_schema.jsonify(new_product),201
+        return response
+
+    #return product_schema.jsonify(new_product),201
 
 
 @app.route('/product', methods=['GET'])
@@ -105,6 +119,31 @@ def update_product(id):
     price = request.json['price']
     qty = request.json['qty']
 
+    errors = []
+
+    
+    if not isinstance(name,(str)):
+        errors.append("Name must be a string!")
+
+    if not isinstance(description, (str)):
+        errors.append("Description must be a string!")
+
+    if not isinstance(price, (float)):
+        errors.append("Price must be a float!")
+
+    if not isinstance(qty, (int)):
+        errors.append("Qty must be a integer!")
+    
+    if qty < 0:
+        errors.append("Qty must be a positiv number or 0")
+    
+    if errors:
+        response = jsonify({"errors": errors})
+        response.status_code = 400 
+
+        return response
+    
+
     product.name = name
     product.description = description
     product.price = price
@@ -118,6 +157,11 @@ def update_product(id):
 @app.route('/product/<id>', methods=['DELETE'])
 def delete_product(id):
     product = Product.query.get(id)
+    if product is None:
+        response = jsonify("Error product not found!")
+        response.status_code = 400
+
+        return response
     
     db.session.delete(product)
     db.session.commit()
