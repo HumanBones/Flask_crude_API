@@ -3,12 +3,15 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 from sqlalchemy.exc import IntegrityError
 import os
+import jwt
+import datetime
+from functools import wraps
 
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 
-#DB
+app.config['SECRET_KEY'] = 'thisissecretkey'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'db.sqlite')
 app.config['SQLALCHEMY_TRACK_MODIFICATION'] = False
 
@@ -39,7 +42,28 @@ product_schema = ProductSchema()
 products_schema = ProductSchema(many=True)
 
 
+def token_required(f):
+    @wraps(f)
+    def decorator(*args, **kwargs):
+        token = None
+
+        if 'x-access-token' in request.headers:
+            token = request.headers['x-access-token']
+        
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'])
+        
+        except:
+            return jsonify({'message': 'Token is invalid!'}), 401
+
+        return f(*args,**kwargs)
+    return decorator
+
 @app.route('/product', methods=['POST'])
+@token_required
 def add_product():
 
     valid_values = ['name','description','price', 'qty']
@@ -97,6 +121,7 @@ def add_product():
 
 
 @app.route('/product', methods=['GET'])
+@token_required
 def get_products():
     all_products = Product.query.all()
     result = products_schema.dump(all_products)
@@ -105,6 +130,7 @@ def get_products():
 
 
 @app.route('/product/<id>', methods=['GET'])
+@token_required
 def get_product(id):
     product = Product.query.get(id)
     return product_schema.jsonify(product)
@@ -112,6 +138,7 @@ def get_product(id):
 
 
 @app.route('/product/<id>', methods=['PUT'])
+@token_required
 def update_product(id):
     product = Product.query.get(id)
     name = request.json['name']
@@ -155,12 +182,13 @@ def update_product(id):
 
 
 @app.route('/product/<id>', methods=['DELETE'])
+@token_required
 def delete_product(id):
     product = Product.query.get(id)
     if product is None:
         response = jsonify("Error product not found!")
         response.status_code = 400
-
+        
         return response
     
     db.session.delete(product)
@@ -169,6 +197,24 @@ def delete_product(id):
     return product_schema.jsonify(product)
 
 
+@app.route('/login')
+def login():
+    auth = request.authorization
+
+    if auth and auth.password == 'password':
+        token = jwt.encode({'user' : auth.username, 'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=30)}, app.config['SECRET_KEY'])
+
+        return jsonify({'token' : token.decode('UTF-8')})
+    
+    elif not auth or not auth.username or not auth.password:
+        response = jsonify('Username and password required!')
+        response.statuse_code = 400
+        return response
+
+
+    response = jsonify('Could not verify, wrong username or password!')
+    response.status_code = 401
+    return response
 
 if __name__ == "__main__":
     app.run(debug=True)
